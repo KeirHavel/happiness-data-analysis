@@ -1,0 +1,417 @@
+---
+title: "What Makes People Happy?"
+author: "Keir Havel"
+output: pdf_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+#Introduction
+
+My research questions are: what variables can be used to predict a country’s subjective happiness best, and what distinguishes happy countries from unhappy countries? To answer these questions, I'll be looking at PCA and correlation matrices of the data, as well as fitting linear models, k-means clustering, kNN, and LDA+QDA analyses.
+
+The attributes of the dataset are GDP (PPP,per capita), energy consumption(per capita), CO2 emissions (per capita), a democracy index (Economist Intelligence Unit), education expenditure (per capita), subjective happiness (UN WHR), health expenditure (per capita), homicide rates, journal articles published, population density, military expenditure (relative to GDP), index of economic freedom (WSJ), research expenditure, suicide rate, undernourishment (population percent), and woman’s empowerment. These attributes were chosen to provide an estimate of country's material wealth, scientific development, social development, crime, and natural resources. There were 200 observations in the full compiled dataset, with many missing data-points due to inconsistencies in countries reported and inconsistencies in labeling (e.g. are Chinese SARs included under China or are they treated as independent entities).
+
+#Exploratory Analysis
+#PCA and Correlation
+The data had some repeated rows and a non-numeric column, so I deleted those to prepare for the PCA.
+
+```{r}
+data = read.table('/home/keir/Downloads/PSTAT/FINALPROJECT/data/Data.csv',quote = "", sep = ',', fill = TRUE, header = T)
+data1 = data[-1]
+data1 = data1[-29,]
+X = as.matrix(data1)
+```
+Next, I made measures for the center and dispersion of the data, and used those to perform a PCA.
+```{r}
+centr <- apply(X,2,mean, na.rm=T)
+disp <- apply(X,2,sd, na.rm=T)
+pca = prcomp(~.,data=data1, center = centr, scale = disp, na.action = na.omit)
+summary(pca)
+```
+From the PCA, 6 principle components explain >90% of the variance, and 8 explain >95%. This analysis shows that food and journal publications both have a large portion of the data's variance. To further elucidate relationships among the variables, I'll look at the correlation matrix.
+
+
+```{r,fig.width=7, fig.height=7}
+library(corrplot)
+corelate = cor(data1, use = "complete")
+corelate = 
+corrplot.mixed(corelate, tl.pos = "n")
+```
+
+From correlation matrix, a few high (>0.75) correlations exist. Food and Journal articles, emissions and energy consumption and GDP and research, energy consumption and health expenditure and research, health expenditure and economic freedom. Thus these 6 variables will be reduced to two in the linear models: Food and energy consumption. Furthermore, since happiness is the major variable of interest, all countries with no happiness data will be deleted; additionally countries and variables with high numbers of missing values will be deleted.
+
+```{r, echo=FALSE}
+library(mice)
+
+Happy <- complete.cases(data[, 9])
+data2 = data[Happy,]
+data2 = data2[1:158,]
+info = md.pattern(data2)
+data2 = data2[,-19]
+data2 = data2[,-17]
+data2 = data2[,-16]
+data2 = data2[,-13]
+data2 = data2[,-10]
+data2 = data2[,-8]
+data2 = data2[,-6]
+data2=data2[,-4]
+data3 = data2[,-1]
+```
+An omitted line (it was long and messy) above used the mice package, previous PCA, and correlation analysis to reduce the data.
+
+#Basic models for more exploration
+To learn a little more about the (reduced) data, a simple linear model was fit.
+```{r}
+model = lm(Happiness ~.,data=data3, na.action = na.omit)
+summary(model)
+```
+From this, it appears that the democracy index, energy consumption, high-tech exports, and population density are the most significant predictors of happiness.
+
+Next, another PCA will find the variance in the reduced data, which furthermore had all its NA values removed.
+```{r, warning=FALSE}
+newdata = na.omit(data2)
+newdata1 = newdata[-1]
+newdata1 = newdata1[-5]
+X1 = as.matrix(newdata1)
+centr1 <- apply(X1,2,mean, na.rm=T)
+disp1 <- apply(X1,2,sd, na.rm=T)
+pca1 = prcomp(~.,data=newdata1,center = centr1, scale = disp1)
+summary(pca1)
+```
+Unlike the first PCA, this analysis had more diverse loadings (more equally representation across the attributes) and was more easy to interpret. The first PC seemed to be related to degree of democracy (eg high loading on democracy, women's empowerment); the second was more highly loaded on military, population density, (negatively) on food production and biodiversity, which suggests some relationship with population size.
+
+```{r}
+DemocraticDevelopment = pca1$x[,1]
+Population = -pca1$x[,2]
+Happiness = newdata$Happiness
+Democracy = newdata$Democracy
+EnergyConsumption = newdata$Energy.Consum
+Food = newdata$Food
+HomicideRates = newdata$Homicide.Rates
+```
+The following are graphs of the data fitted on to the first two principle components, colored by Happiness. The first graph highlights the most happy countries, the second the least.
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+library(ggplot2)
+
+ggplot(newdata1, aes(DemocraticDevelopment,Population, color = Happiness)) + geom_point() +geom_text(aes(label=ifelse(Happiness>7, as.character(newdata$Country), ''), hjust=0, vjust=0))
+ggplot(newdata1, aes(DemocraticDevelopment,Population, color = Happiness)) + geom_point() +geom_text(aes(label=ifelse(Happiness<4, as.character(newdata$Country), ''), hjust=0, vjust=0))
+```
+From these graphs, it appears more democratic countries are more happy.
+
+#K-means clustering
+The following plots show plots of energy consumption and happiness, colored by their cluster. These two attributes were chosen for their general significance to the data, as shown by the PCAs and correlation matrix. The clusters have no obvious visual relationship, but further analysis will try and elucidate them.
+
+```{r}
+cluster5 = kmeans(newdata[,-1],5)
+
+cluster4 = kmeans(newdata[,-1],4)
+
+cluster6 = kmeans(newdata[,-1],6)
+```
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(newdata, aes(EnergyConsumption,Happiness, color = cluster4$cluster )) + geom_point()+geom_text(aes(label=ifelse(Happiness>7, as.character(newdata$Country), ''), hjust=0, vjust=0)) +scale_colour_gradientn(colours=rainbow(4))+ggtitle("4 clusters")
+
+ggplot(newdata, aes(EnergyConsumption,Happiness, color = cluster5$cluster )) + geom_point()+geom_text(aes(label=ifelse(Happiness>7, as.character(newdata$Country), ''), hjust=0, vjust=0))+scale_colour_gradientn(colours=rainbow(5))+ggtitle("5 clusters")
+
+ggplot(newdata, aes(EnergyConsumption,Happiness, color = cluster6$cluster )) + geom_point()+geom_text(aes(label=ifelse(Happiness>7, as.character(newdata$Country), ''), hjust=0, vjust=0))+scale_colour_gradientn(colours=rainbow(6))+ggtitle("6 clusters")
+```
+
+The following will calculate the location of the cluster's centers, to find what attributes they vary the most under.
+```{r}
+Center4 = as.data.frame(cluster4$centers)
+Center5 = as.data.frame(cluster5$centers)
+Center6 = as.data.frame(cluster6$centers)
+```
+
+The previous suggests that food and homicide rates will be useful features to differentiate clusters, since the clusters differ mostly within these variables. The following charts now clearly show that homicide rates and food can be used to visually interpret the clusters. This is likely a result of the hugeness of the food production values. Next, clustering will be redone with scaled data.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(newdata, aes(Food,HomicideRates, color = cluster4$cluster )) + geom_point()+scale_colour_gradientn(colours=rainbow(4))+ggtitle("4 clusters")
+
+ggplot(newdata, aes(Food,HomicideRates, color = cluster5$cluster )) + geom_point()+scale_colour_gradientn(colours=rainbow(5))+ggtitle("5 clusters")
+
+ggplot(newdata, aes(Food,HomicideRates, color = cluster6$cluster )) + geom_point()+scale_colour_gradientn(colours=rainbow(6))+ggtitle("6 clusters")
+```
+
+The following clusters have scaled data, which makes the clusters on the original axes more clear and interpretable. The data has a power-law distribution when plotted with energy consumption vs happiness, clustering seems to break different parts of this curve into different clusters. The "knee" of the curve, has its own cluster for all of the k-values, as does the "bottom" (left part) of the curve.
+
+```{r}
+scaledata = newdata
+scaledata[,-c(1)] = scale(scaledata[,-c(1)])
+
+clusters5 = kmeans(scaledata[,-1],5)
+
+clusters4 = kmeans(scaledata[,-1],4)
+
+clusters6 = kmeans(scaledata[,-1],6)
+```
+
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+ggplot(scaledata, aes(EnergyConsumption,Happiness, color = clusters4$cluster )) + geom_point()+scale_colour_gradientn(colours=rainbow(4))+ggtitle("4 clusters")
+
+ggplot(scaledata, aes(EnergyConsumption,Happiness, color = clusters5$cluster )) + geom_point()+scale_colour_gradientn(colours=rainbow(5))+ggtitle("5 clusters")
+
+ggplot(scaledata, aes(EnergyConsumption,Happiness, color = clusters6$cluster )) + geom_point()+scale_colour_gradientn(colours=rainbow(6))+ggtitle("6 clusters")
+```
+
+#k-NN
+
+The first thing to do for kNN shall be to split the data into a training and test set.
+
+```{r, message=FALSE, warning=FALSE}
+library(class)
+library(reshape2)
+X.dat = as.matrix(scaledata[, -6])
+Y.dat = as.matrix(scaledata[,6])
+Y.dat = ifelse(Y.dat>0,1,0)
+
+
+set.seed (1)
+perc = 0.7
+
+n <- nrow(scaledata)
+train <- sample (n, size = floor (n*perc), replace = F)
+
+X.train <- X.dat [train,]
+X.test <- X.dat [-train,]
+
+Y.train <- Y.dat[train]
+Y.test <- Y.dat[-train]
+```
+The kNN model simply computes if a country is happier than the median or not. The error rate for k=2 is relatively high (>34%), so cross-validation will be used to find the optimal k.
+```{r}
+knn_model <- knn (X.train[,-1],X.test[,-1],Y.train,k=2)
+summary (knn_model)
+
+error_train <- table(knn_model, Y.test)
+train.error <- 1-sum(diag(error_train))/sum(error_train)
+train.error
+```
+Cross-validation will be done through the knn_cv function from section.
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+knn_cv <- function (X.iris, Y.iris, knn_max, n_folds)
+  {
+  
+  cv_error <- matrix(NA, nrow = knn_max, ncol = n_folds) # matrix to store everything
+  
+  n <- nrow(X.iris) #maximum number of observations
+  
+  # Creating an ID for each fold
+  id_fold = rep(1:n_folds,
+                times = c(rep(floor(n/n_folds),n_folds-1),
+                          n-floor(n/n_folds)*(n_folds-1))) 
+  
+  id_fold <- sample (id_fold) # Shuffle the folds
+  
+  for (knn_value in 1:knn_max){
+    for (i in 1:n_folds){
+      idx_test <- (id_fold == i)
+      
+      train.set <- X.iris[!idx_test,] # Training Data (iris.train)
+      test.set <- X.iris[idx_test,] # Test Data (iris.test)
+      
+      # Defining vectors of classes
+      class.train <- Y.iris[!idx_test,] # Response for Training Data
+      class.test <- Y.iris[idx_test,] # Response for Test Data
+      
+      # Fit the model using knn classification technique
+      model_knn_cv <- knn.cv (train = train.set, cl = class.train, l=0, prob = FALSE, use.all = TRUE, k = knn_value)
+      
+      # Calculating Training errors
+      error <- table (model_knn_cv, class.train)
+      cv_error[knn_value,i] <- 1-sum(diag(error))/sum(error) # Storing error
+    }
+  }
+  colnames(cv_error) <- paste0("fold_",1:n_folds) # Assigning names
+  rownames(cv_error) <- 1:knn_max # Assign names
+  return(cv_error)
+}
+```
+The following will graph the folds of the cross-validation with errors, and display the average error for each k.
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+cvknn <- knn_cv(X.dat[,-1], Y.dat, knn_max = 15, n_folds =10)
+
+cvknn2 <- melt(cvknn, value.name = "classifiction_error")
+
+ggplot(cvknn2,aes(x = Var1, y = classifiction_error, colour = Var2)) + 
+  geom_line() + 
+  labs(x = "Number of nearest-neighbors",
+      y = "Classification Error")
+
+AvgError = rowMeans(cvknn)
+AvgError
+```
+This suggests k=6 has the lowest error for kNN model. The error rate is nonetheless high for all k, suggesting that countries happiness is difficult to predict from their neighbors (in the parameter space). This may be alleviated by using more categories, as opposed to happier than median versus less happy than the median, since more happiness categories may allow more nuance between similar countries.
+```{r,echo=FALSE, message=FALSE, warning=FALSE}
+library(lsr)
+Y.dat1 = as.matrix(scaledata[,6])
+Y.dat1 = as.data.frame(quantileCut(as.vector(Y.dat1), 4))
+cvknn1 <- knn_cv(X.dat[,-1], Y.dat1, knn_max = 15, n_folds =10)
+cvknn3 <- melt(cvknn, value.name = "classifiction_error")
+AvgError1 = rowMeans(cvknn1)
+AvgError1
+
+```
+Using more happiness categories did not improve accuracy, it made it far worse, as the above errors show. These error rates reflect a new response variable with 4 happiness factors.
+
+#LDA/QDA analysis
+
+```{r}
+library(MASS)
+
+X = as.data.frame(newdata[,-6])
+Y = Y.dat
+
+set.seed(1)
+lda1 = lda(Y~., data=X[,-1], CV =TRUE)
+
+lda_error <- table (lda1$class,Y)
+lda_error
+
+error_lda <- 1-sum(diag(lda_error))/sum(lda_error)
+error_lda
+
+```
+CV-LDA has slightly better performance than CV-kNN for classifying whether a country's happiness is below the median or not.
+
+```{r}
+qda1 = qda(Y~., data=X[,-1], CV =TRUE)
+
+qda_error <- table (qda1$class,Y)
+qda_error
+
+error_qda <- 1-sum(diag(qda_error))/sum(qda_error)
+error_qda
+```
+The above shows that QDA performs better than both LDA and kNN for classifying happy countries. Bootstrap was not used due to issues with collinearity in bootstrapping, so LOOCV was used instead.
+
+The following plots show the LDA and QDA predictions (shape) vs the actual class values (color). A value of "1" is the class that is happier than the median, "0" less happy.
+
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+TrueClass = as.factor(Y)
+PredictedClassLDA = as.factor(lda1$class)
+PredictedClassQDA = as.factor(qda1$class)
+
+
+ggplot(X[,-1], aes(EnergyConsumption,Democracy, color = TrueClass )) + geom_point(aes(shape = PredictedClassLDA))+ ggtitle("LDA predictions")
+
+ggplot(X[,-1], aes(EnergyConsumption,Democracy, color = TrueClass )) + geom_point(aes(shape = PredictedClassQDA))+ ggtitle("QDA predictions")
+
+```
+
+#Linear Model Predictions
+
+In this section, a quadratic model will be fit to the data (using the most significant variables from the linear model). 
+
+```{r, message=FALSE, warning=FALSE}
+E = newdata$Energy.Consum
+D = newdata$Democracy
+P = newdata$Population.Density
+H = newdata$High.Tech.Exports
+
+model1 = lm(Happiness~poly(E,2)+poly(D,2)+poly(P,2)+poly(H,2), data=newdata)
+summary(model1)
+summary(model)
+```
+
+Comparing the adjusted-R^2 models for the data, the quadratic model explains the data better than the linear model, even when accounting for complexity of the model. Next the linear model will be used to predict happiness in all countries that didn't have happiness values in the UN data set. These will be compared to subjective happiness ratings from other surveys.
+
+```{r, echo=FALSE, message=FALSE, warning=FALSE}
+Unhappy = !Happy
+data4 = data[Unhappy,]
+data4 = data4[,-19]
+data4 = data4[,-17]
+data4 = data4[,-16]
+data4 = data4[,-13]
+data4 = data4[,-10]
+data4 = data4[,-8]
+data4= data4[,-6]
+data4=data4[,-4]
+hap = predict(model, data4)
+hap
+```
+The model predicts Cabo Verde has happiness 5.4; Fiji,4.9;Gambia,3.9;Guyana,5.0.
+An alternative happiness report gives Guayana 51/100, or 5.1 out of 10, so this model was correct for Guyana. According to a WIN/Gallup poll, Fiji would rank 9.3/10, so its prediction is off by a large amount. The large number of missing entries resulted from the missing fields in many of the attributes in the dataset. To alleviate this problem, a reduced model will be fit using only the most complete attributes
+```{r, message=FALSE, warning=FALSE}
+df = data.frame(data3$Biodiversity,data3$Energy.Consum,data3$Population.Density,data3$Food)
+names(df) = c("Biodiversity","Energy.Consum", "Population.Density","Food")
+model2 = lm(data3$Happiness~., df)
+summary(model2)
+new=data.frame(data4$Country,data4$Biodiversity,data4$Energy.Consum,data4$Population.Density,data4$Food)
+names(new) = c("Country","Biodiversity","Energy.Consum", "Population.Density","Food")
+hap1=predict.lm(model2,new, na.action = na.omit)
+hap1
+```
+The reduced model predicts a high happiness score for Brunei (6.6) which has a score of 7.6 in life satisfaction in the Happy Planet Index (HPI). Gambia is predicted to have the low score of 4.7, which is one lower the HPI measurement of 5.7. Other values seem to lag behind the HPI score by about one, which could be an artifact of the survey methods or simply the inaccuracy of the model. While the reduced model doesn't accurately predict values of happiness, it does predict general features (high/low) well.
+
+#GLM
+
+```{r, message=FALSE, warning=FALSE}
+new1 = data.frame(data3$Biodiversity,data3$Energy.Consum,data3$Population.Density,data3$Food, data3$Happiness)
+new1 = na.omit(new1)
+names(new1) = c("Biodiversity","Energy.Consum", "Population.Density","Food", "Happiness")
+medianH = median(new1$Happiness)
+new1$Happiness = ifelse((new1$Happiness-medianH)>0,1,0)
+
+n1 <- nrow(new1)
+train1 <- sample (n1, size = floor (n*perc), replace = F)
+
+newtrain = new1[train1,]
+newtest = new1[-train1,]
+
+
+glm1 = glm(newtrain$Happiness~.,family=binomial(link='logit'),data=newtrain)
+glm.predict = predict(glm1,newtest[,-5],type='response')
+glm.predict = ifelse(glm.predict > 0.5,1,0)
+
+glm_error <- table (glm.predict,newtest$Happiness)
+glm_error
+
+error_glm <- 1-sum(diag(glm_error))/sum(glm_error)
+error_glm
+
+```
+
+The GLM has the lowest error of all models so far, suggesting that a GLM would be the most useful model for predicting happiness from the given attributes. 
+
+
+#Summary
+
+Referring back to the initial research questions:
+
+What variables can be used to predict a country’s subjective happiness best? 
+
+What distinguishes happy countries from unhappy countries?
+
+For the first, the attributes which best predicted happiness were wealth (the correlated variables energy consumption, GDP, and CO2 emission) and democratic development (score on Democracy index, Women's empowerment, economic freedom). In the linear models specifically, energy consumption and the democracy index were highly significant predictors of happiness (P<0.001). This shows that while "money doesn't buy happiness," wealth is highly correlated with happiness. It also suggests that democracy is much more conducive to happiness than most alternative forms of government. However, due to a number of potentially confounding variables (i.e. wealth and health are correlated, as are wealth and democracy) these results likely are biased.
+
+To answer the second question, many models were used to distinguish happier countries from less happy countries. Classification models were used to make a simple prediction: is a country happier than the median or not? The models, from most accurate to least, were GLM, QDA, LDA, and kNN. GLM peaks around 20% accuracy, so while it is much better than guessing, it stills leaves much to be desired.The success of the GLM and QDA suggest that the association between happiness and the variables of interest are nonlinear. This suggests, as intuition would predict, that happiness is very complex and depends on a number of factors in nonlinear ways. In addition to the classification models, linear models were used to predict numerical happiness scores from the other attributes. These scores were occasionally accurate, but that is potentially due to coincidence. 
+
+#Citations
+CO2 Emission per capita, http://cdiac.ornl.gov/
+
+Women's Empowerment, https://www.weforum.org/reports/global-gender-gap-report-2015/
+
+Suicide Rate, http://www.worldlifeexpectancy.com/
+
+Democracy Index, http://www.eiu.com/ or (paper) (http://www.yabiladi.com/img/content/EIU-Democracy-Index-2015.pdf)
+
+Index of economic freedom, http://www.heritage.org/index/
+
+Military expenditure per capita, http://www.sipri.org/databases/milex
+
+Agricutural production, http://faostat.fao.org/site/613/default.aspx#ancor
+
+Energy production,http://www.eia.gov/cfapps/ipdbproject/IEDIndex3.cfm?tid=6&pid=29&aid=12
+
+Homicide rate, https://data.unodc.org/?lf=1&lng=en
+
+GDP per capita, biodiversity, education expenditure per capita, health expenditure per capita, high tech exports, journal articles published, research expenditure, and population density: http://data.worldbank.org/data-catalog/world-development-indicators
+
+World Happiness Report, http://worldhappiness.report/ed/2016/
